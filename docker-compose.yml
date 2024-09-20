@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  db:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_MYSQL_REPO_NAME}:${ECR_MYSQL_TAG}
+    container_name: wordpress_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} 
+      MYSQL_DATABASE: ${MYSQL_DATABASE}          
+      MYSQL_USER: ${MYSQL_USER}                  
+      MYSQL_PASSWORD: ${MYSQL_DB_PASSWORD}       
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - wordpress_network
+
+  wordpress:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_WP_REPO_NAME}:${ECR_WP_TAG}
+    container_name: wordpress_app
+    depends_on:
+      - db
+    restart: always
+    ports:
+      - "8080:80" # Expose WordPress on port 8080
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      WORDPRESS_TABLE_PREFIX: ${WORDPRESS_TABLE_PREFIX}
+    volumes:
+      - wordpress_data:/var/www/html/wp-content
+    networks:
+      - wordpress_network
+
+volumes:
+  db_data:
+  wordpress_data:
+
+networks:
+  wordpress_network:
+    driver: bridge
+    name: wordpress_brdnetwork

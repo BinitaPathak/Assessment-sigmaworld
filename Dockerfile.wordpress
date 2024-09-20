@@ -1,0 +1,40 @@
+# Stage 1: Build WordPress with Alpine Linux
+FROM alpine:3.18 AS builder
+
+# Install necessary packages
+RUN apk add --no-cache \
+    curl \
+    tar
+
+# Download WordPress
+WORKDIR /wordpress
+RUN curl -o wordpress.tar.gz https://wordpress.org/latest.tar.gz \
+    && tar -xzf wordpress.tar.gz --strip-components=1 \
+    && rm wordpress.tar.gz
+
+# Stage 2: Create final image
+FROM php:8.2-apache AS final
+
+# Install required PHP extensions
+RUN docker-php-ext-install mysqli pdo pdo_mysql && docker-php-ext-enable mysqli
+
+# Enable necessary Apache modules
+RUN a2enmod rewrite
+
+# Add non-root user
+RUN groupadd -r myuser && useradd -r -g myuser myuser
+
+# Copy WordPress from the builder stage
+COPY --from=builder /wordpress /var/www/html
+
+# Set permissions
+RUN chown -R myuser:myuser /var/www/html
+
+# Switch to the non-root user
+USER myuser
+
+# Expose port 80
+EXPOSE 80
+
+CMD ["apache2-foreground"]
+
