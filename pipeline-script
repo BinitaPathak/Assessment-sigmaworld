@@ -1,0 +1,119 @@
+pipeline {
+    agent any
+
+    environment {
+        LOCALDIRECTORY = "./"
+    }
+
+    stages {     
+        stage('Clean workspace before checkout') {
+            steps {
+                cleanWs()
+            }
+        }
+
+        stage('Checkout code') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'Gitid', passwordVariable: 'password', usernameVariable: 'username')]) {
+                    // Jenkins 'git' step to check out the correct branch
+                    git branch: '$GIT_BRANCH',
+                        credentialsId: 'Gitid',
+                        url: '$GIT_URL'
+                }
+            }
+        }
+        stage('Check Workspace') {
+            steps {
+                sh 'ls -l'
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build the Docker image from Dockerfile.mysql
+                    sh "docker build -t mysql:${params.DOCKER_TAG} -f Dockerfile.mysql ."
+                    sh "docker build -t wordpress:${params.DOCKER_TAG} -f Dockerfile.wordpress ."
+                }
+            }
+        }
+        stage('Tag Docker Image for ECR') {
+            steps {
+                script {
+                    // Tag the built image with the ECR repository tag
+                    sh "docker tag mysql:${params.DOCKER_TAG} ${params.ACCOUNTID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/mysql:${params.DOCKER_TAG}"
+                    sh "docker tag wordpress:${params.DOCKER_TAG} ${params.ACCOUNTID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/wordpress:${params.DOCKER_TAG}"
+                }
+            }
+        }
+        stage('Push Docker Image to ECR') {
+            steps {
+                script {
+                    // Authenticate with AWS ECR
+                    echo "AWS Region: ${params.AWS_REGION}"
+                    
+                    sh """
+                        aws ecr get-login-password --region ${params.AWS_REGION} | docker login --username AWS --password-stdin ${params.ACCOUNTID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/wordpress
+                    """
+        
+                    // Push the images to ECR
+                    sh "docker push ${params.ACCOUNTID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/wordpress:${params.DOCKER_TAG}"
+        
+                    sh """
+                        aws ecr get-login-password --region ${params.AWS_REGION} | docker login --username AWS --password-stdin ${params.ACCOUNTID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/mysql
+                    """
+                    sh "docker push ${params.ACCOUNTID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/mysql:${params.DOCKER_TAG}"
+                }
+            }
+        }
+        stage('ssh-agent') {
+            steps {
+                sshagent(['ssh-agent']) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no binita@172.31.80.190 '
+                        if [ -f /home/binita/wordpress/run-docker-compose.sh ]; then
+                            cd /home/binita/wordpress && ./run-docker-compose.sh;
+                        else
+                            echo "Script not found: /home/binita/wordpress/run-docker-compose.sh";
+                        fi'
+                    '''
+                }
+            }
+        }
+        
+        /*stage('Test WordPress Home Page') {
+            steps {
+                script {
+                    // Test if WordPress home page is accessible
+                    sh '''
+                        STATUS=$(curl -o /dev/null -s -w "%{http_code}" http://54.174.157.92:8080)
+                        if [ "$STATUS" == "200" ]; then
+                            echo "WordPress home page loaded successfully"
+                        else
+                            echo "Failed to load WordPress home page"
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }*/
+    }
+
+    post {
+        failure {
+            emailext to: params.EMAIL_INFORM,
+                      subject: "FAILED: Build ${env.JOB_NAME}",
+                      body: "Build failed ${env.JOB_NAME} build no: ${env.BUILD_NUMBER}.\n\nView the log at:\n ${env.BUILD_URL}"
+        }
+        success {
+            emailext to: params.EMAIL_INFORM,
+                      subject: "SUCCESSFUL: Build ${env.JOB_NAME}",
+                      body: "Build Successful ${env.JOB_NAME} build no: ${env.BUILD_NUMBER}\n\nView the log at:\n ${env.BUILD_URL}"
+        }
+        aborted {
+            emailext to: params.EMAIL_INFORM,
+                      subject: "ABORTED: Build ${env.JOB_NAME}",
+                      body: "Build was aborted ${env.JOB_NAME} build no: ${env.BUILD_NUMBER}\n\nView the log at:\n ${env.BUILD_URL}"
+        }
+    }
+}
+
