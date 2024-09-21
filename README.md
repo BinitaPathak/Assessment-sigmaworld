@@ -210,7 +210,7 @@ Install all the required software mentioned in the prerequisites.
 - **STAGE-4**: Build Docker Image for WordPress and MySQL
 - **STAGE-5**: Retag Docker Image for ECR repository
 - **STAGE-6**: Push Docker Image to ECR
-- **STAGE-7**: SSH Agent connects to WordPress server from Jenkins **(Replace current file path in your source path)**
+- **STAGE-7**: SSH Agent connects to WordPress server from Jenkins **(Replace current file path with your source path)**
 - **STAGE-8**: Test WordPress Home Page (commented out due to domain/network connectivity requirements)
 - **STAGE-9**: Email Notification for build execution
 
